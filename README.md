@@ -10,14 +10,31 @@ or data loss during a rolling deploy.
 ### Pre-built binaries
 
 Download the latest binary for your platform from the
-[Releases](../../releases/latest) page and place it on your `PATH`.
+[Releases](https://github.com/maartenvanvliet/ddlint/releases/latest) page and
+place it on your `PATH`.
+
+Or install in one line:
+
+```sh
+# Linux (x86_64)
+curl -sSL https://github.com/maartenvanvliet/ddlint/releases/latest/download/ddlint-$(curl -sSL https://api.github.com/repos/maartenvanvliet/ddlint/releases/latest | grep tag_name | cut -d'"' -f4)-x86_64-unknown-linux-musl.tar.gz \
+  | tar -xz -C /usr/local/bin
+
+# macOS (Apple Silicon)
+curl -sSL https://github.com/maartenvanvliet/ddlint/releases/latest/download/ddlint-$(curl -sSL https://api.github.com/repos/maartenvanvliet/ddlint/releases/latest | grep tag_name | cut -d'"' -f4)-aarch64-apple-darwin.tar.gz \
+  | tar -xz -C /usr/local/bin
+
+# macOS (Intel)
+curl -sSL https://github.com/maartenvanvliet/ddlint/releases/latest/download/ddlint-$(curl -sSL https://api.github.com/repos/maartenvanvliet/ddlint/releases/latest | grep tag_name | cut -d'"' -f4)-x86_64-apple-darwin.tar.gz \
+  | tar -xz -C /usr/local/bin
+```
 
 ### Build from source
 
 Requires [Rust](https://rustup.rs/) 1.70 or later.
 
 ```sh
-git clone https://github.com/your-org/ddlint.git
+git clone https://github.com/maartenvanvliet/ddlint.git
 cd ddlint
 cargo build --release
 # binary is at target/release/ddlint
@@ -130,7 +147,8 @@ jobs:
 
       - name: Install ddlint
         run: |
-          curl -sSL https://github.com/your-org/ddlint/releases/latest/download/ddlint-latest-x86_64-unknown-linux-musl.tar.gz \
+          VERSION=$(curl -sSL https://api.github.com/repos/maartenvanvliet/ddlint/releases/latest | grep tag_name | cut -d'"' -f4)
+          curl -sSL "https://github.com/maartenvanvliet/ddlint/releases/download/${VERSION}/ddlint-${VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar -xz -C /usr/local/bin
 
       - name: Run migration linter
