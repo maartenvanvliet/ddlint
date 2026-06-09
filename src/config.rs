@@ -202,10 +202,12 @@ pub fn load_config(explicit_path: Option<&Path>) -> anyhow::Result<Config> {
 // Known rules registry
 // ---------------------------------------------------------------------------
 
-/// Returns the rule identifiers for the given dialect.
-/// Derived from the dialect's rule registry — stays in sync automatically.
+/// Returns all rule identifiers for the given dialect (statement-level + file-level).
+/// Derived from the dialect's rule registries — stays in sync automatically.
 pub fn known_rules(dialect: &Dialect) -> Vec<&'static str> {
-    dialect.rules().iter().map(|r| r.meta().id).collect()
+    let mut ids: Vec<&'static str> = dialect.rules().iter().map(|r| r.meta().id).collect();
+    ids.extend(dialect.file_rules().iter().map(|r| r.meta().id));
+    ids
 }
 
 // ---------------------------------------------------------------------------

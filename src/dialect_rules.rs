@@ -12,10 +12,10 @@
 use crate::finding::Severity;
 use crate::rules::{
     AddColumnEnumRule, AddColumnNoAlgorithmInstantRule, AddColumnNotNullNoDefaultRule,
-    AddForeignKeyRule, AddPrimaryKeyRule, AddUniqueConstraintRule, ChangeColumnEnumRule,
-    ChangeColumnRule, CreateUniqueIndexRule, DialectRule, DropColumnRule, DropPrimaryKeyRule,
-    DropTableRule, LockTablesRule, ModifyColumnEnumRule, ModifyColumnRule, RenameColumnRule,
-    RenameTableRule, TruncateRule,
+    AddForeignKeyRule, AddPrimaryKeyRule, AddUniqueConstraintRule, AlterForeignKeyRule,
+    ChangeColumnEnumRule, ChangeColumnRule, CreateUniqueIndexRule, DialectRule, DropColumnRule,
+    DropPrimaryKeyRule, DropTableRule, FileRule, LockTablesRule, ModifyColumnEnumRule,
+    ModifyColumnRule, MultiStatementMigrationRule, RenameColumnRule, RenameTableRule, TruncateRule,
 };
 
 pub fn mysql_rules() -> Vec<Box<dyn DialectRule>> {
@@ -239,6 +239,46 @@ pub fn mysql_rules() -> Vec<Box<dyn DialectRule>> {
                      serialise access during a data copy, use SELECT ... FOR UPDATE on \
                      individual rows instead, or use pt-online-schema-change which handles \
                      locking safely.",
+        }),
+    ]
+}
+
+pub fn mysql_file_rules() -> Vec<Box<dyn FileRule>> {
+    vec![
+        Box::new(MultiStatementMigrationRule {
+            severity: Severity::Warning,
+            detail: "MySQL has no transactional DDL. Each DDL statement causes an implicit \
+                     commit before it executes, so multiple DDL statements in one migration \
+                     file are not atomic.\n\
+                     \n\
+                     If the second statement fails, the first is already committed and \
+                     cannot be rolled back. Tools like Flyway and Liquibase will mark the \
+                     migration as failed, leaving the schema in a partial state that requires \
+                     manual intervention to repair.\n\
+                     \n\
+                     Fix: split this file into one DDL statement per migration file. \
+                     Each file then succeeds or fails atomically from the migration \
+                     tool's perspective.",
+        }),
+        Box::new(AlterForeignKeyRule {
+        severity: Severity::Danger,
+        detail: "Altering a foreign key in MySQL requires dropping and re-adding the constraint. \
+                 When MySQL adds the new FK it validates every existing row against the constraint, \
+                 acquiring a metadata lock that blocks all DDL on both tables for the duration.\n\
+                 \n\
+                 Without SET FOREIGN_KEY_CHECKS = 0, this validation runs synchronously and \
+                 can take minutes on large tables. The lock also prevents the UNLOCK from the \
+                 other end of a rolling deploy from proceeding.\n\
+                 \n\
+                 Fix: wrap the DROP + ADD pair with:\n\
+                 SET FOREIGN_KEY_CHECKS = 0;\n\
+                 ALTER TABLE ... DROP FOREIGN KEY ...;\n\
+                 ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...;\n\
+                 SET FOREIGN_KEY_CHECKS = 1;\n\
+                 \n\
+                 This skips row-level validation. Only safe if you are certain the existing \
+                 data already satisfies the new constraint (e.g. only changing ON DELETE \
+                 behaviour, not the referenced column or table).",
         }),
     ]
 }

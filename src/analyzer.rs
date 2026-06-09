@@ -21,7 +21,7 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::finding::FileResult;
-use crate::rules::check_statement;
+use crate::rules::{check_file_rules, check_statement};
 
 // ---------------------------------------------------------------------------
 // Input resolution
@@ -131,10 +131,11 @@ pub fn analyze_file(path: &Path, config: &Config) -> FileResult {
     let dialect = config.dialect.sql_dialect();
     match Parser::parse_sql(dialect.as_ref(), &sql) {
         Ok(stmts) => {
-            let findings = stmts
+            let mut findings: Vec<_> = stmts
                 .iter()
                 .flat_map(|s| check_statement(s, path, config))
                 .collect();
+            findings.extend(check_file_rules(&stmts, path, config));
             FileResult::ok(path.to_path_buf(), findings)
         }
         Err(e) => FileResult::error(path.to_path_buf(), format!("SQL parse error: {e}")),

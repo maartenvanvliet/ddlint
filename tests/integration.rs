@@ -149,10 +149,12 @@ fn text_output_includes_summary_line() {
 #[test]
 fn text_output_summary_counts_danger_and_warning() {
     let dir = TempDir::new().unwrap();
+    // Single statement: ADD_COLUMN_NOT_NULL_NO_DEFAULT (danger) +
+    // ADD_COLUMN_NO_ALGORITHM_INSTANT (warning) — avoids MULTI_STATEMENT_MIGRATION.
     let f = write_sql(
         &dir,
         "mixed.sql",
-        "DROP TABLE legacy; CREATE UNIQUE INDEX idx ON users(email);",
+        "ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL;",
     );
     let out = ddlint().arg(f).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);

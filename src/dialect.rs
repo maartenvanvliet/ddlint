@@ -3,8 +3,8 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 
-use crate::dialect_rules::mysql_rules;
-use crate::rules::DialectRule;
+use crate::dialect_rules::{mysql_file_rules, mysql_rules};
+use crate::rules::{DialectRule, FileRule};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -23,6 +23,12 @@ impl Dialect {
     pub fn rules(&self) -> Vec<Box<dyn DialectRule>> {
         match self {
             Dialect::Mysql => mysql_rules(),
+        }
+    }
+
+    pub fn file_rules(&self) -> Vec<Box<dyn FileRule>> {
+        match self {
+            Dialect::Mysql => mysql_file_rules(),
         }
     }
 }

@@ -146,8 +146,13 @@ fn print_default_config(dialect: &Dialect) {
     println!("# Valid levels: danger (= error), warn (= warning), ignore (= off).");
     println!("dialect: {dialect}");
     println!("rules:");
-    for rule in dialect.rules() {
-        let meta = rule.meta();
+    let all_rules: Vec<_> = dialect
+        .rules()
+        .into_iter()
+        .map(|r| r.meta())
+        .chain(dialect.file_rules().into_iter().map(|r| r.meta()))
+        .collect();
+    for meta in all_rules {
         let level = match meta.default_severity {
             Severity::Danger => "danger",
             Severity::Warning => "warn",

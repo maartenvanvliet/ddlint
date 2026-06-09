@@ -1,5 +1,7 @@
 mod add_column_enum;
 mod add_column_no_algorithm_instant;
+mod alter_foreign_key;
+mod multi_statement_migration;
 mod add_column_not_null_no_default;
 mod add_foreign_key;
 mod add_primary_key;
@@ -19,6 +21,8 @@ mod truncate;
 
 pub use add_column_enum::AddColumnEnumRule;
 pub use add_column_no_algorithm_instant::AddColumnNoAlgorithmInstantRule;
+pub use alter_foreign_key::AlterForeignKeyRule;
+pub use multi_statement_migration::MultiStatementMigrationRule;
 pub use add_column_not_null_no_default::AddColumnNotNullNoDefaultRule;
 pub use add_foreign_key::AddForeignKeyRule;
 pub use add_primary_key::AddPrimaryKeyRule;
@@ -53,6 +57,11 @@ pub trait DialectRule {
     fn check(&self, stmt: &Statement, path: &Path) -> Vec<Finding>;
 }
 
+pub trait FileRule {
+    fn meta(&self) -> RuleMeta;
+    fn check_file(&self, stmts: &[Statement], path: &Path) -> Vec<Finding>;
+}
+
 pub fn check_statement(stmt: &Statement, path: &Path, config: &Config) -> Vec<Finding> {
     let raw: Vec<Finding> = config
         .dialect
@@ -61,7 +70,23 @@ pub fn check_statement(stmt: &Statement, path: &Path, config: &Config) -> Vec<Fi
         .flat_map(|rule| rule.check(stmt, path))
         .collect();
 
-    raw.into_iter()
+    apply_config(raw, config)
+}
+
+pub fn check_file_rules(stmts: &[Statement], path: &Path, config: &Config) -> Vec<Finding> {
+    let raw: Vec<Finding> = config
+        .dialect
+        .file_rules()
+        .iter()
+        .flat_map(|rule| rule.check_file(stmts, path))
+        .collect();
+
+    apply_config(raw, config)
+}
+
+fn apply_config(findings: Vec<Finding>, config: &Config) -> Vec<Finding> {
+    findings
+        .into_iter()
         .filter_map(|mut f| {
             let level = config.effective_level(f.rule, &f.severity);
             match Config::to_severity(&level) {
@@ -90,10 +115,12 @@ mod tests {
         let dialect = config.dialect.sql_dialect();
         let stmts = Parser::parse_sql(dialect.as_ref(), sql).expect("parse failed");
         let path = PathBuf::from("test.sql");
-        stmts
+        let mut findings: Vec<Finding> = stmts
             .iter()
             .flat_map(|s| check_statement(s, &path, config))
-            .collect()
+            .collect();
+        findings.extend(check_file_rules(&stmts, &path, config));
+        findings
     }
 
     fn rules(findings: &[Finding]) -> Vec<&str> {
@@ -382,14 +409,21 @@ mod tests {
 
     #[test]
     fn multiple_safe_statements_are_clean() {
+        // Multiple DDL statements now trigger MULTI_STATEMENT_MIGRATION (warning).
+        // Verify there are no *danger* findings — the only finding is the migration-level advisory.
         let f = parse_and_check(indoc! {"
             ALTER TABLE users ADD COLUMN notes TEXT, ALGORITHM=INSTANT;
             ALTER TABLE users ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'active', ALGORITHM=INSTANT;
             CREATE INDEX idx_status ON users(status);
         "});
+        let danger: Vec<_> = f
+            .iter()
+            .filter(|f| f.severity == crate::finding::Severity::Danger)
+            .collect();
+        assert!(danger.is_empty(), "no danger findings expected, got: {danger:?}");
         assert!(
-            f.is_empty(),
-            "all safe statements should produce no findings, got: {f:?}"
+            rules(&f).contains(&"MULTI_STATEMENT_MIGRATION"),
+            "expected MULTI_STATEMENT_MIGRATION warning for multi-DDL file"
         );
     }
 
@@ -511,5 +545,140 @@ mod tests {
             .find(|f| f.rule == "MODIFY_COLUMN")
             .expect("no finding");
         assert_eq!(finding.severity, crate::finding::Severity::Danger);
+    }
+
+    // ── ALTER FOREIGN KEY ────────────────────────────────────────────────────
+
+    #[test]
+    fn alter_fk_drop_and_add_without_fk_checks_is_danger() {
+        let f = parse_and_check(indoc! {"
+            ALTER TABLE orders DROP FOREIGN KEY fk_user;
+            ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
+        "});
+        assert!(
+            rules(&f).contains(&"ALTER_FOREIGN_KEY"),
+            "expected ALTER_FOREIGN_KEY, got: {f:?}"
+        );
+    }
+
+    #[test]
+    fn alter_fk_with_fk_checks_disabled_is_safe() {
+        let f = parse_and_check(indoc! {"
+            SET FOREIGN_KEY_CHECKS = 0;
+            ALTER TABLE orders DROP FOREIGN KEY fk_user;
+            ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
+            SET FOREIGN_KEY_CHECKS = 1;
+        "});
+        assert!(
+            !rules(&f).contains(&"ALTER_FOREIGN_KEY"),
+            "should be clean with FK checks disabled, got: {f:?}"
+        );
+    }
+
+    #[test]
+    fn alter_fk_missing_restore_is_danger() {
+        let f = parse_and_check(indoc! {"
+            SET FOREIGN_KEY_CHECKS = 0;
+            ALTER TABLE orders DROP FOREIGN KEY fk_user;
+            ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
+        "});
+        assert!(
+            rules(&f).contains(&"ALTER_FOREIGN_KEY"),
+            "missing SET FK_CHECKS=1 should still fire, got: {f:?}"
+        );
+    }
+
+    #[test]
+    fn alter_fk_missing_disable_is_danger() {
+        let f = parse_and_check(indoc! {"
+            ALTER TABLE orders DROP FOREIGN KEY fk_user;
+            ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
+            SET FOREIGN_KEY_CHECKS = 1;
+        "});
+        assert!(
+            rules(&f).contains(&"ALTER_FOREIGN_KEY"),
+            "missing SET FK_CHECKS=0 should still fire, got: {f:?}"
+        );
+    }
+
+    // ── MULTI_STATEMENT_MIGRATION ────────────────────────────────────────────
+
+    #[test]
+    fn single_ddl_statement_is_clean() {
+        let f = parse_and_check("ALTER TABLE users ADD COLUMN notes TEXT, ALGORITHM=INSTANT;");
+        assert!(!rules(&f).contains(&"MULTI_STATEMENT_MIGRATION"));
+    }
+
+    #[test]
+    fn two_ddl_statements_triggers_rule() {
+        let f = parse_and_check(indoc! {"
+            ALTER TABLE users ADD COLUMN notes TEXT, ALGORITHM=INSTANT;
+            ALTER TABLE orders ADD COLUMN ref TEXT, ALGORITHM=INSTANT;
+        "});
+        assert!(
+            rules(&f).contains(&"MULTI_STATEMENT_MIGRATION"),
+            "two DDL stmts should fire MULTI_STATEMENT_MIGRATION, got: {f:?}"
+        );
+    }
+
+    #[test]
+    fn multi_statement_finding_is_warning() {
+        let f = parse_and_check(indoc! {"
+            ALTER TABLE users ADD COLUMN notes TEXT, ALGORITHM=INSTANT;
+            ALTER TABLE orders ADD COLUMN ref TEXT, ALGORITHM=INSTANT;
+        "});
+        let finding = f
+            .iter()
+            .find(|f| f.rule == "MULTI_STATEMENT_MIGRATION")
+            .unwrap();
+        assert_eq!(finding.severity, crate::finding::Severity::Warning);
+    }
+
+    #[test]
+    fn multi_statement_fires_once_not_per_statement() {
+        let f = parse_and_check(indoc! {"
+            ALTER TABLE a ADD COLUMN x TEXT, ALGORITHM=INSTANT;
+            ALTER TABLE b ADD COLUMN y TEXT, ALGORITHM=INSTANT;
+            ALTER TABLE c ADD COLUMN z TEXT, ALGORITHM=INSTANT;
+        "});
+        assert_eq!(
+            f.iter()
+                .filter(|f| f.rule == "MULTI_STATEMENT_MIGRATION")
+                .count(),
+            1,
+            "should fire exactly once regardless of statement count"
+        );
+    }
+
+    #[test]
+    fn set_statement_not_counted_as_ddl() {
+        // SET is not DDL — one ALTER TABLE flanked by SET statements should not trigger
+        // MULTI_STATEMENT_MIGRATION (only 1 DDL statement).
+        let f = parse_and_check(indoc! {"
+            SET FOREIGN_KEY_CHECKS = 0;
+            ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id);
+            SET FOREIGN_KEY_CHECKS = 1;
+        "});
+        assert!(
+            !rules(&f).contains(&"MULTI_STATEMENT_MIGRATION"),
+            "SET statements should not count toward DDL statement count"
+        );
+    }
+
+    #[test]
+    fn fresh_add_fk_without_drop_does_not_trigger_alter_rule() {
+        // A brand-new FK (no matching DROP in the file) is covered by ADD_FOREIGN_KEY,
+        // not ALTER_FOREIGN_KEY.
+        let f = parse_and_check(
+            "ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id);",
+        );
+        assert!(
+            !rules(&f).contains(&"ALTER_FOREIGN_KEY"),
+            "fresh ADD FK should not trigger ALTER_FOREIGN_KEY"
+        );
+        assert!(
+            rules(&f).contains(&"ADD_FOREIGN_KEY"),
+            "fresh ADD FK should still trigger ADD_FOREIGN_KEY"
+        );
     }
 }
