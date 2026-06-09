@@ -1,0 +1,22 @@
+[package]
+name = "ddlint"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ddlint"
+path = "src/main.rs"
+
+[dependencies]
+sqlparser  = "0.62"
+anyhow     = "1"
+colored    = "2"
+walkdir    = "2"
+glob       = "0.3"
+serde      = { version = "1", features = ["derive"] }
+serde_yaml = "0.8"
+clap       = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+indoc    = "2"
+tempfile = "3"

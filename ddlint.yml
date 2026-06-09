@@ -1,0 +1,29 @@
+# ddlint.yml
+#
+# Per-rule severity overrides. Place this file in your project root
+# (or pass --config <path>). Rules not listed here use their default severity.
+#
+# Valid levels:
+#   error / danger  — finding blocks CI (exit 1)
+#   warn  / warning — finding is reported but does not block CI
+#   ignore / off    — finding is suppressed entirely
+#
+# Available rules:
+#   ADD_COLUMN_ENUM              ADD_COLUMN_NOT_NULL_NO_DEFAULT
+#   ADD_FOREIGN_KEY              ADD_UNIQUE_CONSTRAINT
+#   CHANGE_COLUMN                CHANGE_COLUMN_ENUM
+#   CREATE_UNIQUE_INDEX          DROP_COLUMN
+#   DROP_PRIMARY_KEY             DROP_TABLE
+#   MODIFY_COLUMN                MODIFY_COLUMN_ENUM
+#   RENAME_COLUMN                RENAME_TABLE
+#   TRUNCATE
+
+rules: {}
+  # Example: downgrade MODIFY_COLUMN if you always use pt-online-schema-change
+  # MODIFY_COLUMN: warn
+
+  # Example: suppress ENUM warning if you have an existing ENUM strategy
+  # ADD_COLUMN_ENUM: ignore
+
+  # Example: treat unique index creation as a hard error
+  # CREATE_UNIQUE_INDEX: error
