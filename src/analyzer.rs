@@ -22,6 +22,7 @@ use walkdir::WalkDir;
 use crate::config::Config;
 use crate::finding::FileResult;
 use crate::rules::{check_file_rules, check_statement};
+use crate::suppress::parse_suppressions;
 
 // ---------------------------------------------------------------------------
 // Input resolution
@@ -131,11 +132,29 @@ pub fn analyze_file(path: &Path, config: &Config) -> FileResult {
     let dialect = config.dialect.sql_dialect();
     match Parser::parse_sql(dialect.as_ref(), &sql) {
         Ok(stmts) => {
+            let suppressions = parse_suppressions(&sql);
+
+            // Per-statement findings, tagged with their statement index for suppression.
             let mut findings: Vec<_> = stmts
                 .iter()
-                .flat_map(|s| check_statement(s, path, config))
+                .enumerate()
+                .flat_map(|(idx, s)| {
+                    check_statement(s, path, config)
+                        .into_iter()
+                        .map(move |f| (idx, f))
+                })
+                .filter(|(idx, f)| {
+                    !suppressions.is_suppressed_for_stmt(f.rule, *idx)
+                        && !suppressions.is_suppressed_file_wide(f.rule)
+                })
+                .map(|(_, f)| f)
                 .collect();
-            findings.extend(check_file_rules(&stmts, path, config));
+
+            let file_findings = check_file_rules(&stmts, path, config)
+                .into_iter()
+                .filter(|f| !suppressions.is_suppressed_file_wide(f.rule));
+            findings.extend(file_findings);
+
             FileResult::ok(path.to_path_buf(), findings)
         }
         Err(e) => FileResult::error(path.to_path_buf(), format!("SQL parse error: {e}")),
@@ -316,5 +335,91 @@ mod tests {
         let mut sorted = files.clone();
         sorted.dedup();
         assert_eq!(files.len(), sorted.len(), "duplicates found: {files:?}");
+    }
+
+    // ── inline suppression (end-to-end through analyze_file) ─────────────────
+
+    fn cfg() -> crate::config::Config {
+        crate::config::Config::default()
+    }
+
+    #[test]
+    fn above_directive_suppresses_finding() {
+        let tmp = make_tmp();
+        let f = write(
+            tmp.path(),
+            "m.sql",
+            "-- ddlint:ignore DROP_TABLE\nDROP TABLE legacy;",
+        );
+        let result = analyze_file(&f, &cfg());
+        assert!(result.parse_error.is_none());
+        assert!(
+            result.findings.is_empty(),
+            "finding should be suppressed, got: {:?}",
+            result.findings
+        );
+    }
+
+    #[test]
+    fn inline_directive_suppresses_finding() {
+        let tmp = make_tmp();
+        let f = write(
+            tmp.path(),
+            "m.sql",
+            "DROP TABLE legacy; -- ddlint:ignore DROP_TABLE",
+        );
+        let result = analyze_file(&f, &cfg());
+        assert!(result.findings.is_empty(), "got: {:?}", result.findings);
+    }
+
+    #[test]
+    fn suppression_does_not_bleed_to_next_statement() {
+        let tmp = make_tmp();
+        let f = write(
+            tmp.path(),
+            "m.sql",
+            "-- ddlint:ignore DROP_TABLE\nDROP TABLE a;\nDROP TABLE b;",
+        );
+        let result = analyze_file(&f, &cfg());
+        // Exactly one DROP_TABLE finding remains (for the second statement)
+        assert_eq!(
+            result.findings.iter().filter(|f| f.rule == "DROP_TABLE").count(),
+            1,
+            "expected exactly 1 unsuppressed DROP_TABLE, got: {:?}",
+            result.findings
+        );
+    }
+
+    #[test]
+    fn file_wide_directive_suppresses_file_level_rule() {
+        let tmp = make_tmp();
+        let f = write(
+            tmp.path(),
+            "m.sql",
+            "-- ddlint:ignore-file MULTI_STATEMENT_MIGRATION\n\
+             ALTER TABLE a ADD COLUMN x TEXT, ALGORITHM=INSTANT;\n\
+             ALTER TABLE b ADD COLUMN y TEXT, ALGORITHM=INSTANT;",
+        );
+        let result = analyze_file(&f, &cfg());
+        let rules: Vec<_> = result.findings.iter().map(|f| f.rule).collect();
+        assert!(
+            !rules.contains(&"MULTI_STATEMENT_MIGRATION"),
+            "MULTI_STATEMENT_MIGRATION should be suppressed, got: {rules:?}"
+        );
+    }
+
+    #[test]
+    fn unsuppressed_finding_still_fires_alongside_suppressed_one() {
+        let tmp = make_tmp();
+        // DROP_TABLE is suppressed; TRUNCATE is not.
+        let f = write(
+            tmp.path(),
+            "m.sql",
+            "-- ddlint:ignore-file DROP_TABLE\nDROP TABLE a;\nTRUNCATE TABLE b;",
+        );
+        let result = analyze_file(&f, &cfg());
+        let rules: Vec<_> = result.findings.iter().map(|f| f.rule).collect();
+        assert!(!rules.contains(&"DROP_TABLE"), "DROP_TABLE should be suppressed");
+        assert!(rules.contains(&"TRUNCATE"), "TRUNCATE should still fire");
     }
 }

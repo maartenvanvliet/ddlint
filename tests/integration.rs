@@ -486,6 +486,67 @@ fn print_config_dialect_flag_changes_dialect_field() {
 }
 
 // ---------------------------------------------------------------------------
+// Inline suppression
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ignore_above_statement_suppresses_finding() {
+    let dir = TempDir::new().unwrap();
+    let f = write_sql(
+        &dir,
+        "m.sql",
+        "-- ddlint:ignore DROP_TABLE\nDROP TABLE legacy;",
+    );
+    let out = ddlint().arg(f).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "suppressed danger should exit 0");
+    assert!(!stdout.contains("DROP_TABLE"), "suppressed rule should not appear in output");
+}
+
+#[test]
+fn ignore_inline_suppresses_finding() {
+    let dir = TempDir::new().unwrap();
+    let f = write_sql(
+        &dir,
+        "m.sql",
+        "DROP TABLE legacy; -- ddlint:ignore DROP_TABLE",
+    );
+    assert_eq!(ddlint().arg(f).status().unwrap().code(), Some(0));
+}
+
+#[test]
+fn ignore_file_suppresses_file_level_rule() {
+    let dir = TempDir::new().unwrap();
+    let f = write_sql(
+        &dir,
+        "m.sql",
+        "-- ddlint:ignore-file MULTI_STATEMENT_MIGRATION\n\
+         ALTER TABLE a ADD COLUMN x TEXT, ALGORITHM=INSTANT;\n\
+         ALTER TABLE b ADD COLUMN y TEXT, ALGORITHM=INSTANT;",
+    );
+    let out = ddlint().arg(f).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("MULTI_STATEMENT_MIGRATION"), "file-wide rule should be suppressed");
+    assert_eq!(out.status.code(), Some(0));
+}
+
+#[test]
+fn ignore_only_suppresses_named_rule() {
+    let dir = TempDir::new().unwrap();
+    // DROP_TABLE suppressed but TRUNCATE is not
+    let f = write_sql(
+        &dir,
+        "m.sql",
+        "-- ddlint:ignore-file DROP_TABLE\nDROP TABLE a;\nTRUNCATE TABLE b;",
+    );
+    let out = ddlint().arg(f).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("DROP_TABLE"), "DROP_TABLE should be suppressed");
+    assert!(stdout.contains("TRUNCATE"), "TRUNCATE should still fire");
+    assert_eq!(out.status.code(), Some(1));
+}
+
+// ---------------------------------------------------------------------------
 // Parse errors
 // ---------------------------------------------------------------------------
 

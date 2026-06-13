@@ -5,6 +5,7 @@ mod dialect_rules;
 mod finding;
 mod output;
 mod rules;
+mod suppress;
 
 use std::path::PathBuf;
 use std::process;
