@@ -57,9 +57,7 @@ impl FileRule for AlterForeignKeyRule {
             path: path.to_path_buf(),
             severity: self.severity.clone(),
             rule: "ALTER_FOREIGN_KEY",
-            title: format!(
-                "FK constraint on `{table}` altered without SET FOREIGN_KEY_CHECKS=0/1"
-            ),
+            title: format!("FK constraint on `{table}` altered without SET FOREIGN_KEY_CHECKS=0/1"),
             detail: self.detail.to_string(),
             sql: add_stmt.to_string(),
         }]

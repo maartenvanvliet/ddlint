@@ -499,8 +499,15 @@ fn ignore_above_statement_suppresses_finding() {
     );
     let out = ddlint().arg(f).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(out.status.code(), Some(0), "suppressed danger should exit 0");
-    assert!(!stdout.contains("DROP_TABLE"), "suppressed rule should not appear in output");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "suppressed danger should exit 0"
+    );
+    assert!(
+        !stdout.contains("DROP_TABLE"),
+        "suppressed rule should not appear in output"
+    );
 }
 
 #[test]
@@ -526,7 +533,10 @@ fn ignore_file_suppresses_file_level_rule() {
     );
     let out = ddlint().arg(f).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(!stdout.contains("MULTI_STATEMENT_MIGRATION"), "file-wide rule should be suppressed");
+    assert!(
+        !stdout.contains("MULTI_STATEMENT_MIGRATION"),
+        "file-wide rule should be suppressed"
+    );
     assert_eq!(out.status.code(), Some(0));
 }
 
@@ -541,7 +551,10 @@ fn ignore_only_suppresses_named_rule() {
     );
     let out = ddlint().arg(f).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(!stdout.contains("DROP_TABLE"), "DROP_TABLE should be suppressed");
+    assert!(
+        !stdout.contains("DROP_TABLE"),
+        "DROP_TABLE should be suppressed"
+    );
     assert!(stdout.contains("TRUNCATE"), "TRUNCATE should still fire");
     assert_eq!(out.status.code(), Some(1));
 }

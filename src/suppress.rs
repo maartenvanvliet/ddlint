@@ -85,7 +85,10 @@ pub fn parse_suppressions(sql: &str) -> Suppressions {
         stmt_idx += count_statement_ends(sql_part);
     }
 
-    Suppressions { per_stmt, file_wide }
+    Suppressions {
+        per_stmt,
+        file_wide,
+    }
 }
 
 // ---------------------------------------------------------------------------

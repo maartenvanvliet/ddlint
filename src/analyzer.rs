@@ -383,7 +383,11 @@ mod tests {
         let result = analyze_file(&f, &cfg());
         // Exactly one DROP_TABLE finding remains (for the second statement)
         assert_eq!(
-            result.findings.iter().filter(|f| f.rule == "DROP_TABLE").count(),
+            result
+                .findings
+                .iter()
+                .filter(|f| f.rule == "DROP_TABLE")
+                .count(),
             1,
             "expected exactly 1 unsuppressed DROP_TABLE, got: {:?}",
             result.findings
@@ -419,7 +423,10 @@ mod tests {
         );
         let result = analyze_file(&f, &cfg());
         let rules: Vec<_> = result.findings.iter().map(|f| f.rule).collect();
-        assert!(!rules.contains(&"DROP_TABLE"), "DROP_TABLE should be suppressed");
+        assert!(
+            !rules.contains(&"DROP_TABLE"),
+            "DROP_TABLE should be suppressed"
+        );
         assert!(rules.contains(&"TRUNCATE"), "TRUNCATE should still fire");
     }
 }

@@ -1,11 +1,10 @@
 mod add_column_enum;
 mod add_column_no_algorithm_instant;
-mod alter_foreign_key;
-mod multi_statement_migration;
 mod add_column_not_null_no_default;
 mod add_foreign_key;
 mod add_primary_key;
 mod add_unique_constraint;
+mod alter_foreign_key;
 mod change_column;
 mod change_column_enum;
 mod create_unique_index;
@@ -15,18 +14,18 @@ mod drop_table;
 mod lock_tables;
 mod modify_column;
 mod modify_column_enum;
+mod multi_statement_migration;
 mod rename_column;
 mod rename_table;
 mod truncate;
 
 pub use add_column_enum::AddColumnEnumRule;
 pub use add_column_no_algorithm_instant::AddColumnNoAlgorithmInstantRule;
-pub use alter_foreign_key::AlterForeignKeyRule;
-pub use multi_statement_migration::MultiStatementMigrationRule;
 pub use add_column_not_null_no_default::AddColumnNotNullNoDefaultRule;
 pub use add_foreign_key::AddForeignKeyRule;
 pub use add_primary_key::AddPrimaryKeyRule;
 pub use add_unique_constraint::AddUniqueConstraintRule;
+pub use alter_foreign_key::AlterForeignKeyRule;
 pub use change_column::ChangeColumnRule;
 pub use change_column_enum::ChangeColumnEnumRule;
 pub use create_unique_index::CreateUniqueIndexRule;
@@ -36,6 +35,7 @@ pub use drop_table::DropTableRule;
 pub use lock_tables::LockTablesRule;
 pub use modify_column::ModifyColumnRule;
 pub use modify_column_enum::ModifyColumnEnumRule;
+pub use multi_statement_migration::MultiStatementMigrationRule;
 pub use rename_column::RenameColumnRule;
 pub use rename_table::RenameTableRule;
 pub use truncate::TruncateRule;
@@ -420,7 +420,10 @@ mod tests {
             .iter()
             .filter(|f| f.severity == crate::finding::Severity::Danger)
             .collect();
-        assert!(danger.is_empty(), "no danger findings expected, got: {danger:?}");
+        assert!(
+            danger.is_empty(),
+            "no danger findings expected, got: {danger:?}"
+        );
         assert!(
             rules(&f).contains(&"MULTI_STATEMENT_MIGRATION"),
             "expected MULTI_STATEMENT_MIGRATION warning for multi-DDL file"
