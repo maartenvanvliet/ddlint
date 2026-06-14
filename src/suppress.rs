@@ -118,11 +118,7 @@ fn split_sql_and_inline_directive(line: &str) -> (&str, Option<HashSet<String>>)
         None => (line, ""),
     };
 
-    let inline = if let Some(rules) = directive_rules(comment_part.trim(), "-- ddlint:ignore") {
-        Some(rules)
-    } else {
-        None
-    };
+    let inline = directive_rules(comment_part.trim(), "-- ddlint:ignore");
 
     (sql_part, inline)
 }
